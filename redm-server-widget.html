@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RedM Server Status</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Creepster&family=Rye:wght@400&display=swap');
+        
+        .server-widget {
+            background: linear-gradient(145deg, #8B4513, #A0522D);
+            border: 3px solid #654321;
+            border-radius: 10px;
+            box-shadow: 
+                inset 2px 2px 5px rgba(139, 69, 19, 0.3),
+                inset -2px -2px 5px rgba(0, 0, 0, 0.5),
+                0 5px 15px rgba(0, 0, 0, 0.4);
+            padding: 20px;
+            max-width: 350px;
+            margin: 0 auto;
+            font-family: 'Rye', serif;
+            color: #F5DEB3;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .server-widget::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><pattern id="wood" patternUnits="userSpaceOnUse" width="20" height="20"><rect fill="%23A0522D" width="20" height="20"/><path d="M0,10 Q10,8 20,10 M0,5 Q10,7 20,5 M0,15 Q10,13 20,15" stroke="%23654321" stroke-width="0.5" fill="none" opacity="0.3"/></pattern></defs><rect width="100" height="100" fill="url(%23wood)"/></svg>') center/cover;
+            opacity: 0.1;
+            pointer-events: none;
+        }
+
+        .server-title {
+            font-family: 'Creepster', serif;
+            font-size: 1.4em;
+            color: #FFD700;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+            margin-bottom: 15px;
+            letter-spacing: 1px;
+        }
+
+        .player-count {
+            background: linear-gradient(145deg, #2F1B14, #1A0F0A);
+            border: 2px solid #8B4513;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+            box-shadow: inset 2px 2px 5px rgba(0, 0, 0, 0.5);
+            position: relative;
+        }
+
+        .player-number {
+            font-size: 2.2em;
+            font-weight: bold;
+            color: #FFD700;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+            margin: 5px 0;
+        }
+
+        .player-text {
+            font-size: 0.9em;
+            color: #DEB887;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .server-info {
+            font-size: 0.8em;
+            color: #CD853F;
+            margin-top: 10px;
+            opacity: 0.9;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 5px;
+            animation: pulse 2s infinite;
+        }
+
+        .status-online {
+            background: #32CD32;
+            box-shadow: 0 0 10px #32CD32;
+        }
+
+        .status-offline {
+            background: #DC143C;
+            box-shadow: 0 0 10px #DC143C;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.7; transform: scale(1.1); }
+            100% { opacity: 1; transform: scale(1); }
+        }
+
+        .horseshoe {
+            position: absolute;
+            top: 5px;
+            right: 10px;
+            font-size: 1.2em;
+            color: #654321;
+            opacity: 0.6;
+        }
+
+        .update-info {
+            font-size: 0.7em;
+            color: #A0522D;
+            margin-top: 10px;
+            font-style: italic;
+        }
+
+        .error-message {
+            color: #FF6B6B;
+            font-size: 0.8em;
+            margin-top: 5px;
+        }
+
+        @media (max-width: 400px) {
+            .server-widget {
+                max-width: 280px;
+                padding: 15px;
+            }
+            .server-title {
+                font-size: 1.2em;
+            }
+            .player-number {
+                font-size: 1.8em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="server-widget">
+        <div class="horseshoe">🐎</div>
+        <h2 class="server-title">RedM Server</h2>
+        
+        <div class="player-count">
+            <div class="player-number" id="playerCount">--/--</div>
+            <div class="player-text">Cowboys Online</div>
+        </div>
+        
+        <div class="server-info">
+            <span class="status-indicator" id="statusLight"></span>
+            <span id="serverStatus">Checking...</span>
+        </div>
+        
+        <div class="update-info" id="lastUpdate">
+            Updating...
+        </div>
+    </div>
+
+    <script>
+        const SERVER_IP = '185.94.29.249:30120';
+        const UPDATE_INTERVAL = 30000; // 30 Sekunden
+
+        let isOnline = false;
+        let currentPlayers = 0;
+        let maxPlayers = 32; // Default fallback
+
+        // Elemente
+        const playerCountEl = document.getElementById('playerCount');
+        const statusLightEl = document.getElementById('statusLight');
+        const serverStatusEl = document.getElementById('serverStatus');
+        const lastUpdateEl = document.getElementById('lastUpdate');
+
+        // CORS-Proxy Optionen (falls direkter Zugriff blockiert wird)
+        const proxyOptions = [
+            `https://api.allorigins.win/raw?url=http://${SERVER_IP}`,
+            `https://corsproxy.io/?http://${SERVER_IP}`,
+            `http://${SERVER_IP}` // Direkter Zugriff
+        ];
+
+        async function fetchServerData(endpoint) {
+            // Versuche zuerst direkten Zugriff
+            try {
+                const response = await fetch(`http://${SERVER_IP}/${endpoint}`, {
+                    method: 'GET',
+                    mode: 'cors'
+                });
+                if (response.ok) {
+                    return await response.json();
+                }
+            } catch (error) {
+                console.log('Direkter Zugriff fehlgeschlagen, versuche Proxy...');
+            }
+
+            // Falls direkter Zugriff fehlschlägt, versuche Proxies
+            for (let proxy of proxyOptions.slice(0, -1)) {
+                try {
+                    const response = await fetch(`${proxy}/${endpoint}`);
+                    if (response.ok) {
+                        const data = await response.json();
+                        return data;
+                    }
+                } catch (error) {
+                    console.log(`Proxy ${proxy} fehlgeschlagen`);
+                }
+            }
+            
+            throw new Error('Alle Verbindungsversuche fehlgeschlagen');
+        }
+
+        async function updateServerStatus() {
+            try {
+                // Hole Spielerliste und Serverinfo parallel
+                const [playersData, infoData] = await Promise.allSettled([
+                    fetchServerData('players.json'),
+                    fetchServerData('info.json')
+                ]);
+
+                let players = [];
+                let serverInfo = null;
+
+                if (playersData.status === 'fulfilled') {
+                    players = playersData.value;
+                }
+
+                if (infoData.status === 'fulfilled') {
+                    serverInfo = infoData.value;
+                    if (serverInfo && serverInfo.vars && serverInfo.vars.sv_maxClients) {
+                        maxPlayers = parseInt(serverInfo.vars.sv_maxClients) || maxPlayers;
+                    }
+                }
+
+                // Wenn mindestens eine Anfrage erfolgreich war
+                if (playersData.status === 'fulfilled' || infoData.status === 'fulfilled') {
+                    currentPlayers = Array.isArray(players) ? players.length : 0;
+                    isOnline = true;
+                    updateUI();
+                } else {
+                    throw new Error('Server nicht erreichbar');
+                }
+
+            } catch (error) {
+                console.error('Fehler beim Abrufen der Serverdaten:', error);
+                isOnline = false;
+                updateUI();
+            }
+        }
+
+        function updateUI() {
+            const now = new Date();
+            const timeString = now.toLocaleTimeString('de-DE', { 
+                hour: '2-digit', 
+                minute: '2-digit' 
+            });
+
+            if (isOnline) {
+                playerCountEl.textContent = `${currentPlayers}/${maxPlayers}`;
+                statusLightEl.className = 'status-indicator status-online';
+                serverStatusEl.textContent = 'Online';
+                lastUpdateEl.textContent = `Zuletzt aktualisiert: ${timeString}`;
+            } else {
+                playerCountEl.textContent = '--/--';
+                statusLightEl.className = 'status-indicator status-offline';
+                serverStatusEl.textContent = 'Offline oder nicht erreichbar';
+                lastUpdateEl.textContent = `Fehler: ${timeString}`;
+            }
+        }
+
+        // Initial laden
+        updateServerStatus();
+
+        // Regelmäßige Updates
+        setInterval(updateServerStatus, UPDATE_INTERVAL);
+
+        // Update auch bei Fokus-Wechsel
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) {
+                updateServerStatus();
+            }
+        });
+    </script>
+</body>
+</html>
